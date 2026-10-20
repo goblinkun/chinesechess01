@@ -18,13 +18,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
+      # Qt 6.9.3 是最后一个仍使用旧版仓库布局的 LTS 版本，
+      # aqtinstall 目前能稳定安装；6.10+ 的 Windows 布局 aqt 尚不兼容。
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.12.0'          # 与本地 brew 安装的版本一致
+          version: '6.9.3'
+          modules: 'qtmultimedia'
           cache: true
 
       - name: Build engine (Pikafish)
@@ -56,7 +57,8 @@ jobs:
 
       - name: Package DMG
         run: |
-          mkdir -p release staging
+          rm -rf staging release
+          mkdir -p staging release
           cp -R ChineseChess/bin/ChineseChess.app staging/
           ln -s /Applications staging/Applications
           hdiutil create -volname "ChineseChess" \
@@ -75,32 +77,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install Qt (MSVC 2022)
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.12.0'
+          version: '6.9.3'
           arch: 'win64_msvc2022_64'
+          modules: 'qtmultimedia'
           cache: true
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
-      # 引擎用 MSYS2 的 MinGW-w64 编译成独立的 .exe（静态链接，无需 Qt）
+      # 引擎用 MSYS2 的 MinGW-w64 编译成独立 .exe（Makefile 会加 -static）
       - name: Setup MSYS2 (for engine)
         uses: msys2/setup-msys2@v2
         with:
           install: >-
             mingw-w64-x86_64-gcc
             make
+            curl
 
+      # 指定 avx2 而非 native：云端 runner 支持 AVX512，
+      # 用 native 编出的 exe 在普通用户机器上会因非法指令崩溃。
       - name: Build engine (Pikafish)
         shell: msys2 {0}
         run: |
           cd Pikafish/src
-          make -j build
+          make -j"$(nproc)" ARCH=x86-64-avx2 build
 
       - name: Configure app (Visual Studio)
         run: cmake -S ChineseChess -B ChineseChess/build -A x64 -DSKIP_DEPLOY=ON
@@ -108,27 +112,28 @@ jobs:
       - name: Build app
         run: cmake --build ChineseChess/build --config Release
 
+      # CMakeLists 已把 RUNTIME_OUTPUT_DIRECTORY_RELEASE 固定为 ChineseChess/bin
       - name: Bundle engine
-        shell: bash
+        shell: pwsh
         run: |
-          BIN="ChineseChess/bin/Release"
-          mkdir -p "$BIN/engine"
-          cp Pikafish/src/pikafish.exe   "$BIN/engine/"
-          cp Pikafish/src/pikafish.nnue  "$BIN/engine/"
+          $bin = "ChineseChess/bin"
+          New-Item -ItemType Directory -Force -Path "$bin/engine" | Out-Null
+          Copy-Item "Pikafish/src/pikafish.exe"  "$bin/engine/"
+          Copy-Item "Pikafish/src/pikafish.nnue" "$bin/engine/"
+          Get-ChildItem $bin | Select-Object Name
 
       - name: Deploy Qt runtime (windeployqt)
-        shell: bash
+        shell: pwsh
         run: |
-          windeployqt --no-translations --no-compiler-runtime \
-            "ChineseChess/bin/Release/ChineseChess.exe"
+          windeployqt --release --compiler-runtime --no-translations `
+            "ChineseChess/bin/ChineseChess.exe"
 
       - name: Package zip
-        shell: bash
+        shell: pwsh
         run: |
-          mkdir -p release
-          cd ChineseChess/bin/Release
-          7z a ../../../release/ChineseChess-windows-x64.zip . || \
-            powershell -NoProfile -Command "Compress-Archive -Path * -DestinationPath ../../../release/ChineseChess-windows-x64.zip"
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Compress-Archive -Path "ChineseChess/bin/*" `
+            -DestinationPath "release/ChineseChess-windows-x64.zip" -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

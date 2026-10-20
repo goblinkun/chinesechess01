@@ -1,6 +1,8 @@
 # Files from build
 **/*.o
-**/*.s
+# 注意：不要用 **/*.s 忽略 gcc -save-temps 的中间文件，
+# macOS 上 gitignore 大小写不敏感，会把源码 huf_decompress_amd64.S 一起忽略，
+# 导致 Windows 构建时 zstd 汇编符号缺失、链接失败。
 src/.depend
 src/temp_builds
 .build_sha.txt

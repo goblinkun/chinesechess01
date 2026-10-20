@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# 构建产物（App 由源码在 CI/本地构建）
+ChineseChess/build/
+ChineseChess/bin/
+
+# Pikafish 引擎编译产物与 NNUE 权重（构建时由 net.sh 自动下载）
+Pikafish/src/*.o
+Pikafish/src/pikafish
+Pikafish/src/pikafish.exe
+Pikafish/src/pikafish.nnue
+Pikafish/src/.obj/
+Pikafish/src/universal/
+
+# 商店素材/演示视频（非源码）
+ChineseChess/MS/
+
+# 打包输出
+dist/
+release/
+
+# IDE
+.vscode/
+.idea/

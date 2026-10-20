@@ -1,0 +1,137 @@
+name: Build & Package
+
+# 首次推送到 GitHub 后，在 Actions 页手动触发（workflow_dispatch），
+# 或打 tag（v*）后自动触发。
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: macOS (arm64)
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.12.0'          # 与本地 brew 安装的版本一致
+          cache: true
+
+      - name: Build engine (Pikafish)
+        run: |
+          cd Pikafish/src
+          make -j"$(sysctl -n hw.logicalcpu)" build
+
+      - name: Configure app
+        run: |
+          cmake -S ChineseChess -B ChineseChess/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSKIP_DEPLOY=ON
+
+      - name: Build app
+        run: cmake --build ChineseChess/build -j"$(sysctl -n hw.logicalcpu)"
+
+      - name: Bundle engine into .app
+        run: |
+          APP="ChineseChess/bin/ChineseChess.app/Contents/MacOS"
+          mkdir -p "$APP/engine"
+          cp Pikafish/src/pikafish      "$APP/engine/"
+          cp Pikafish/src/pikafish.nnue "$APP/engine/"
+
+      - name: Deploy Qt runtime (macdeployqt)
+        run: macdeployqt ChineseChess/bin/ChineseChess.app -always-overwrite
+
+      - name: Ad-hoc codesign
+        run: codesign --force --deep --sign - ChineseChess/bin/ChineseChess.app
+
+      - name: Package DMG
+        run: |
+          mkdir -p release staging
+          cp -R ChineseChess/bin/ChineseChess.app staging/
+          ln -s /Applications staging/Applications
+          hdiutil create -volname "ChineseChess" \
+            -srcfolder staging -ov -format UDZO \
+            release/ChineseChess-macos-arm64.dmg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChineseChess-macos-arm64
+          path: release/*.dmg
+
+  windows:
+    name: Windows (x64)
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Qt (MSVC 2022)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.12.0'
+          arch: 'win64_msvc2022_64'
+          cache: true
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # 引擎用 MSYS2 的 MinGW-w64 编译成独立的 .exe（静态链接，无需 Qt）
+      - name: Setup MSYS2 (for engine)
+        uses: msys2/setup-msys2@v2
+        with:
+          install: >-
+            mingw-w64-x86_64-gcc
+            make
+
+      - name: Build engine (Pikafish)
+        shell: msys2 {0}
+        run: |
+          cd Pikafish/src
+          make -j build
+
+      - name: Configure app (Visual Studio)
+        run: cmake -S ChineseChess -B ChineseChess/build -A x64 -DSKIP_DEPLOY=ON
+
+      - name: Build app
+        run: cmake --build ChineseChess/build --config Release
+
+      - name: Bundle engine
+        shell: bash
+        run: |
+          BIN="ChineseChess/bin/Release"
+          mkdir -p "$BIN/engine"
+          cp Pikafish/src/pikafish.exe   "$BIN/engine/"
+          cp Pikafish/src/pikafish.nnue  "$BIN/engine/"
+
+      - name: Deploy Qt runtime (windeployqt)
+        shell: bash
+        run: |
+          windeployqt --no-translations --no-compiler-runtime \
+            "ChineseChess/bin/Release/ChineseChess.exe"
+
+      - name: Package zip
+        shell: bash
+        run: |
+          mkdir -p release
+          cd ChineseChess/bin/Release
+          7z a ../../../release/ChineseChess-windows-x64.zip . || \
+            powershell -NoProfile -Command "Compress-Archive -Path * -DestinationPath ../../../release/ChineseChess-windows-x64.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChineseChess-windows-x64
+          path: release/*.zip

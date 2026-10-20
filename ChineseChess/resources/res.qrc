@@ -1,0 +1,25 @@
+<RCC>
+    <qresource prefix="/">
+        <file>images/5abc.png</file>
+        <file>images/b.jpg</file>
+        <file>images/background.jpg</file>
+        <file>images/chess.svg</file>
+        <file>images/win.jpg</file>
+        <file>sound/backChess.wav</file>
+        <file>sound/eatChess.wav</file>
+        <file>sound/generalSound.wav</file>
+        <file>sound/moveChess.wav</file>
+        <file>sound/selectChess.wav</file>
+        <file>sound/WinSound.wav</file>
+        <file>images/contributor/BlueArvin.png</file>
+        <file>images/contributor/Bruce-Ch.png</file>
+        <file>images/contributor/hmsjy2017.png</file>
+        <file>images/contributor/kirayamatoo.png</file>
+        <file>images/contributor/OpenAI-Codex.png</file>
+        <file>images/contributor/ryanfortner.png</file>
+        <file>images/contributor/Ubuntuser2012.png</file>
+        <file>images/contributor/XMuli.png</file>
+        <file>images/contributor/zjuyk.png</file>
+        <file>images/contributor/sum2012.png</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,77 @@
+name: Ubuntu_DEB
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+    paths-ignore:
+      - '*.md'
+  pull_request:
+    paths-ignore:
+      - '*.md'
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    env:
+      targetName: ChineseChess
+      targetLowerName: chinesechess
+      targetOS: debian
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Name version
+        id: name-version
+        if: startsWith(github.event.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $systemInfo="${{ env.targetOS }}-x64"
+          $productVersion="${{ github.ref }}".substring("refs/tags/v".length)
+          $productDebName="${{ env.targetLowerName }}-$productVersion"
+
+          echo "systemInfo=$systemInfo" >> $env:GITHUB_ENV
+          echo "productVersion=$productVersion" >> $env:GITHUB_ENV
+          echo "productDebName=$productDebName" >> $env:GITHUB_ENV
+
+      - name: Install build deps
+        if: startsWith(github.event.ref, 'refs/tags/')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y vim wget tar dh-make debmake lintian cmake ninja-build libgl1-mesa-dev \
+            qt6-base-dev qt6-tools-dev qt6-tools-dev-tools qt6-multimedia-dev libqt6svg6-dev libqt6opengl6-dev
+
+      - name: Build DEB package
+        if: startsWith(github.event.ref, 'refs/tags/')
+        run: |
+          cd ..
+          cp -r ${{ env.targetName }} ${{ env.productDebName }}
+          tar -czf ${{ env.productDebName }}.tar.gz ${{ env.productDebName }}
+
+          export DEBEMAIL="xmulitech@gmail.com"
+          export DEBFULLNAME="XMuli"
+
+          cd ${{ env.productDebName }}
+          dpkg-buildpackage -b -rfakeroot -us -uc
+
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.event.ref, 'refs/tags/')
+        with:
+          name: ${{ env.productDebName }}-deb
+          path: ../*.deb
+
+      - name: Upload Release
+        if: startsWith(github.event.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.upload_release }}
+        with:
+          draft: false
+          prerelease: false
+          files: |
+            ../*.deb
+          tag: ${{ github.ref }}

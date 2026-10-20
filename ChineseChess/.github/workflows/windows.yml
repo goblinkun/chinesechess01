@@ -1,0 +1,86 @@
+name: Windows
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+    paths-ignore:
+      - '*.md'
+  pull_request:
+    paths-ignore:
+      - '*.md'
+jobs:
+  build:
+    name: Build
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        include:
+          - qt_ver: '6.8.3'
+            qt_arch: win64_msvc2022_64
+            msvc_arch: x64
+    env:
+      targetName: ChineseChess
+      targetOS: windows
+
+    steps:
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ matrix.qt_ver }}
+          arch: ${{ matrix.qt_arch }}
+          set-env: true
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Configure & Build (MSVC)
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.msvc_arch }}
+          cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="%Qt6_DIR%" -DSKIP_DEPLOY=ON -S . -B build
+          cmake --build build --config Release --parallel
+
+      - name: Name version
+        id: name-version
+        if: startsWith(github.event.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $systemInfo="${{ env.targetOS }}-${{ matrix.msvc_arch }}"
+          $productVersion="${{ github.ref }}".substring("refs/tags/v".length)
+          $productName="${{ env.targetName }}-$productVersion-$systemInfo"
+
+          echo "systemInfo=$systemInfo" >> $env:GITHUB_ENV
+          echo "productVersion=$productVersion" >> $env:GITHUB_ENV
+          echo "productName=$productName" >> $env:GITHUB_ENV
+
+      - name: Package
+        if: startsWith(github.event.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          if (Test-Path bin) { Remove-Item -Recurse -Force bin }
+          New-Item -ItemType Directory -Path bin | Out-Null
+          Copy-Item -Path build/bin/* -Destination bin/ -Recurse
+          windeployqt bin/${{ env.targetName }}.exe
+          Compress-Archive -Path bin/* -DestinationPath "${{ env.productName }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.event.ref, 'refs/tags/')
+        with:
+          name: ${{ env.productName }}
+          path: ${{ env.productName }}.zip
+
+      - name: Upload Release
+        if: startsWith(github.event.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.upload_release }}
+        with:
+          draft: false
+          prerelease: false
+          files: |
+            ${{ env.productName }}.zip
+          tag: ${{ github.ref }}

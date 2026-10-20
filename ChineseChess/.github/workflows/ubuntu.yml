@@ -1,0 +1,97 @@
+name: Ubuntu
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+    paths-ignore:
+      - '*.md'
+  pull_request:
+    paths-ignore:
+      - '*.md'
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - qt_ver: '6.8.3'
+            qt_arch: linux_gcc_64
+    env:
+      targetName: ChineseChess
+      targetOS: debian
+
+    steps:
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ matrix.qt_ver }}
+          arch: ${{ matrix.qt_arch }}
+          set-env: true
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgl1-mesa-dev libpulse-dev
+
+      - name: Build
+        run: |
+          cmake -S . -B build -GNinja -DCMAKE_PREFIX_PATH="$Qt6_DIR" -DSKIP_DEPLOY=ON
+          cmake --build build --parallel
+
+      - name: Name version
+        id: name-version
+        if: startsWith(github.event.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $systemInfo="${{ env.targetOS }}-x64"
+          $productVersion="${{ github.ref }}".substring("refs/tags/v".length)
+          $productName="${{ env.targetName }}-$productVersion-$systemInfo"
+
+          echo "systemInfo=$systemInfo" >> $env:GITHUB_ENV
+          echo "productVersion=$productVersion" >> $env:GITHUB_ENV
+          echo "productName=$productName" >> $env:GITHUB_ENV
+
+      - name: Package
+        if: startsWith(github.event.ref, 'refs/tags/')
+        run: |
+          mkdir -p pkg/bin
+          target_path="build/bin/${{ env.targetName }}"
+          if [ ! -f "$target_path" ]; then
+            target_path="bin/${{ env.targetName }}"
+          fi
+          cp "$target_path" pkg/bin/${{ env.targetName }}
+          cp -r debian_portable/* pkg/bin/
+
+          chmod +x pkg/bin/ldd.sh
+          chmod +x pkg/bin/${{ env.targetName }}.sh
+
+          cd pkg/bin
+          ./ldd.sh ${{ env.targetName }}
+          cd ../..
+          zip -q -r ${{ env.productName }}.zip pkg/bin/*
+
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.event.ref, 'refs/tags/')
+        with:
+          name: ${{ env.productName }}-linux
+          path: ${{ env.productName }}.zip
+
+      - name: Upload Release
+        if: startsWith(github.event.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.upload_release }}
+        with:
+          draft: false
+          prerelease: false
+          files: |
+            ${{ env.productName }}.zip
+          tag: ${{ github.ref }}
